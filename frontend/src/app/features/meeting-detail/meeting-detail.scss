@@ -1,0 +1,51 @@
+.head h1 { margin: 8px 0 4px; font: var(--mat-sys-headline-small); }
+.sub { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; color: var(--mat-sys-on-surface-variant); }
+.block { padding: 16px; margin-top: 16px; }
+h2 { display: flex; align-items: center; gap: 6px; font: var(--mat-sys-title-medium); margin: 0 0 8px; }
+.muted { color: var(--mat-sys-on-surface-variant); font-size: 12px; }
+.load-error { display: flex; flex-direction: row; gap: 8px; padding: 16px; color: var(--conflict-color); }
+
+.status {
+  text-transform: capitalize; font-size: 12px; padding: 2px 8px; border-radius: 10px;
+  background: var(--mat-sys-surface-container-high);
+  &.cancelled { background: var(--conflict-bg); color: var(--conflict-color); }
+  &.tentative { background: var(--warning-bg); color: var(--warning-color); }
+}
+
+.conflicts { border-left: 4px solid var(--conflict-color); }
+.conflict, .issue {
+  display: flex; align-items: center; gap: 8px; padding: 4px 0; flex-wrap: wrap;
+  &.error mat-icon { color: var(--conflict-color); }
+  &.warning mat-icon { color: var(--warning-color); }
+  &.info mat-icon { color: var(--info-color); }
+  code { font-size: 12px; background: var(--mat-sys-surface-container); padding: 1px 6px; border-radius: 4px; }
+}
+.duplicate { border-left: 4px solid var(--warning-color); p { margin: 4px 0; } }
+
+table { width: 100%; }
+.field { font-weight: 500; white-space: nowrap; }
+.value { margin-right: 6px; }
+.side { color: var(--mat-sys-on-surface-variant); max-width: 280px; overflow-wrap: anywhere; }
+.crm-head { color: var(--crm-color); }
+.cal-head { color: var(--cal-color); }
+.from {
+  font-size: 10px; padding: 1px 6px; border-radius: 8px; white-space: nowrap; color: #fff;
+  &.crm { background: var(--crm-color); }
+  &.calendar { background: var(--cal-color); }
+}
+.conflict-row { background: var(--conflict-bg); }
+.fstatus {
+  display: inline-flex; align-items: center; gap: 4px; font-size: 12px; white-space: nowrap; cursor: help;
+  mat-icon { font-size: 16px; width: 16px; height: 16px; }
+  &.agree, &.equivalent { color: var(--ok-color); }
+  &.refinement, &.filled { color: var(--info-color); }
+  &.complementary, &.single_source { color: var(--mat-sys-on-surface-variant); }
+  &.conflict { color: var(--conflict-color); font-weight: 500; }
+}
+
+.breakdown {
+  display: grid; grid-template-columns: 90px 1fr 48px; gap: 6px 12px; align-items: center; max-width: 520px;
+  .signal { text-transform: capitalize; font-size: 13px; }
+  .score { font-size: 12px; text-align: right; }
+}
+pre { font-size: 12px; overflow-x: auto; margin: 0; }

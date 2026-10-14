@@ -1,0 +1,136 @@
+<a mat-button routerLink="/meetings"><mat-icon>arrow_back</mat-icon> All meetings</a>
+
+@if (meeting.isLoading()) {
+  <mat-progress-bar mode="indeterminate" />
+}
+@if (meeting.error()) {
+  <mat-card class="load-error"><mat-icon>error</mat-icon> Meeting not found or API unavailable.</mat-card>
+}
+
+@if (meeting.value(); as m) {
+  <header class="head">
+    <div>
+      <h1>{{ m.title }}</h1>
+      <div class="sub">
+        {{ m.start ? (m.start | firmTime) : (m.date | firmTime: 'date') + ' (time unknown)' }}
+        · <span class="status {{ m.status }}">{{ m.status }}</span>
+        · <app-source-badge [sources]="m.sources" [ids]="m.source_ids" />
+      </div>
+    </div>
+  </header>
+
+  @if (m.conflicts.length) {
+    <mat-card class="block conflicts">
+      <h2><mat-icon>report</mat-icon> {{ m.conflicts.length }} conflict{{ m.conflicts.length > 1 ? 's' : '' }} between sources</h2>
+      @for (c of m.conflicts; track c.field) {
+        <div class="conflict {{ c.severity }}">
+          <mat-icon>{{ severityIcon[c.severity] }}</mat-icon>
+          <span>{{ c.message }}</span>
+        </div>
+      }
+    </mat-card>
+  }
+
+  @for (d of m.duplicates; track d.canonical_id) {
+    <mat-card class="block duplicate">
+      <h2><mat-icon>content_copy</mat-icon> Duplicate records in {{ d.source === 'crm' ? 'CRM' : 'Calendar' }}</h2>
+      <p>
+        <strong>{{ d.canonical_id }}</strong> is used (newest record);
+        superseded: <strong>{{ d.superseded_ids.join(', ') }}</strong>.
+      </p>
+      <p class="muted">Why: {{ d.reason }}</p>
+    </mat-card>
+  }
+
+  <mat-card class="block">
+    <h2>Field-by-field comparison</h2>
+    <p class="muted">
+      Each unified value is tagged with the source it was taken from. Hover the status for the resolution rule.
+      Times are firm-local (America/New_York).
+    </p>
+    <table mat-table [dataSource]="rows()">
+      <ng-container matColumnDef="field">
+        <th mat-header-cell *matHeaderCellDef>Field</th>
+        <td mat-cell *matCellDef="let r" class="field">{{ r.label }}</td>
+      </ng-container>
+      <ng-container matColumnDef="value">
+        <th mat-header-cell *matHeaderCellDef>Unified value</th>
+        <td mat-cell *matCellDef="let r">
+          <span class="value">{{ r.value | displayValue }}</span>
+          @if (r.source) {
+            <span class="from {{ r.source }}">from {{ r.source === 'crm' ? 'CRM' : 'Calendar' }}</span>
+          }
+        </td>
+      </ng-container>
+      <ng-container matColumnDef="crm">
+        <th mat-header-cell *matHeaderCellDef class="crm-head">CRM said</th>
+        <td mat-cell *matCellDef="let r" class="side">{{ r.crm | displayValue }}</td>
+      </ng-container>
+      <ng-container matColumnDef="calendar">
+        <th mat-header-cell *matHeaderCellDef class="cal-head">Calendar said</th>
+        <td mat-cell *matCellDef="let r" class="side">{{ r.calendar | displayValue }}</td>
+      </ng-container>
+      <ng-container matColumnDef="status">
+        <th mat-header-cell *matHeaderCellDef>Status</th>
+        <td mat-cell *matCellDef="let r">
+          <span class="fstatus {{ r.status }}" [matTooltip]="statusTooltip(r)">
+            <mat-icon>{{ meta(r).icon }}</mat-icon>{{ meta(r).label }}
+          </span>
+        </td>
+      </ng-container>
+      <tr mat-header-row *matHeaderRowDef="columns()"></tr>
+      <tr mat-row *matRowDef="let row; columns: columns()" [class.conflict-row]="row.status === 'conflict'"></tr>
+    </table>
+  </mat-card>
+
+  @if (m.match; as match) {
+    <mat-card class="block">
+      <h2>Why these records were matched — confidence {{ match.confidence | percent }}</h2>
+      <p class="muted">
+        Scored on <strong>{{ match.scored_pair.crm }}</strong> ↔ <strong>{{ match.scored_pair.calendar }}</strong>.
+        @if (scoredOnSuperseded()) {
+          This is the best-matching record of the duplicate group; the unified values above come from the
+          canonical (newest) record, which is why a conflict can appear despite a perfect match.
+        }
+      </p>
+      <ul>
+        @for (r of match.reasons; track r) { <li>{{ r }}</li> }
+      </ul>
+      <div class="breakdown">
+        @for (b of breakdown(); track b.signal) {
+          <span class="signal">{{ b.signal }}</span>
+          <mat-progress-bar mode="determinate" [value]="b.score * 100" />
+          <span class="score">{{ b.score | percent }}</span>
+        }
+      </div>
+    </mat-card>
+  }
+
+  @if (m.issues.length) {
+    <mat-card class="block">
+      <h2>Data-quality issues in the source records</h2>
+      @for (i of m.issues; track $index) {
+        <div class="issue {{ i.severity }}">
+          <mat-icon>{{ severityIcon[i.severity] }}</mat-icon>
+          <app-source-badge [sources]="[i.source]" />
+          <span><strong>{{ i.source_id }}</strong> · {{ i.field }}: {{ i.message }}</span>
+          @if (i.raw_value !== null && i.raw_value !== undefined) {
+            <code>{{ i.raw_value | json }}</code>
+          }
+        </div>
+      }
+    </mat-card>
+  }
+
+  <mat-card class="block">
+    <h2>Raw source records</h2>
+    <mat-accordion multi>
+      @for (rec of rawRecords(); track rec[0]) {
+        <mat-expansion-panel>
+          <mat-expansion-panel-header>{{ rec[0] }}</mat-expansion-panel-header>
+          <pre>{{ rec[1] | json }}</pre>
+        </mat-expansion-panel>
+      }
+    </mat-accordion>
+  </mat-card>
+}

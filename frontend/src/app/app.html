@@ -1,0 +1,20 @@
+<mat-toolbar>
+  <mat-icon>event_available</mat-icon>
+  <span class="brand">Event Sync Service</span>
+  <nav>
+    <a mat-button routerLink="/meetings" routerLinkActive="active">Meetings</a>
+    <a mat-button routerLink="/issues" routerLinkActive="active">Data issues</a>
+  </nav>
+  <span class="spacer"></span>
+  @if (health(); as h) {
+    <span class="api" [class.down]="!h.ready" [matTooltip]="h.last_error ?? 'Data source: ' + h.data_source">
+      <mat-icon>{{ h.ready ? 'cloud_done' : 'cloud_off' }}</mat-icon> API {{ h.ready ? 'ready' : 'not ready' }}
+    </span>
+  } @else {
+    <span class="api down"><mat-icon>cloud_off</mat-icon> API unreachable</span>
+  }
+</mat-toolbar>
+
+<main>
+  <router-outlet />
+</main>

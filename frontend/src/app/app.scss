@@ -1,0 +1,13 @@
+mat-toolbar {
+  gap: 8px;
+  background: var(--mat-sys-primary-container);
+  color: var(--mat-sys-on-primary-container);
+  .brand { font-weight: 500; margin-right: 16px; }
+  .active { background: rgba(0, 0, 0, 0.08); }
+}
+.spacer { flex: 1 1 auto; }
+.api {
+  display: inline-flex; align-items: center; gap: 4px; font-size: 13px;
+  &.down { color: var(--conflict-color); }
+}
+main { padding: 16px 24px; max-width: 1400px; margin: 0 auto; }

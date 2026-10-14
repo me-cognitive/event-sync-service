@@ -1,0 +1,117 @@
+@if (summary.value(); as s) {
+  <section class="summary">
+    <mat-card class="stat"><span class="num">{{ s.meetings }}</span><span>Meetings</span></mat-card>
+    <mat-card class="stat"><span class="num">{{ s.matched }}</span><span>In both sources</span></mat-card>
+    <mat-card class="stat"><span class="num">{{ s.crm_only }}</span><span>CRM only</span></mat-card>
+    <mat-card class="stat"><span class="num">{{ s.calendar_only }}</span><span>Calendar only</span></mat-card>
+    <mat-card class="stat conflict"><span class="num">{{ s.with_conflicts }}</span><span>With conflicts</span></mat-card>
+    <mat-card class="stat"><span class="num">{{ s.duplicate_groups }}</span><span>Duplicate groups</span></mat-card>
+    <div class="sync">
+      <button mat-stroked-button (click)="resync()" [disabled]="syncing()">
+        <mat-icon>sync</mat-icon> Re-sync
+      </button>
+      <small>{{ s.records.crm }} CRM + {{ s.records.calendar }} calendar records · source: {{ s.data_source }}</small>
+    </div>
+  </section>
+}
+
+<section class="filters">
+  <mat-button-toggle-group [value]="source()" (change)="source.set($event.value)" aria-label="Source filter">
+    <mat-button-toggle value="">All</mat-button-toggle>
+    <mat-button-toggle value="both">Matched</mat-button-toggle>
+    <mat-button-toggle value="crm">CRM only</mat-button-toggle>
+    <mat-button-toggle value="calendar">Calendar only</mat-button-toggle>
+  </mat-button-toggle-group>
+
+  <mat-slide-toggle [checked]="conflictsOnly()" (change)="conflictsOnly.set($event.checked)">
+    Conflicts only
+  </mat-slide-toggle>
+
+  <mat-form-field appearance="outline" subscriptSizing="dynamic" class="search">
+    <mat-icon matPrefix>search</mat-icon>
+    <input matInput placeholder="Title, client, company, owner, record ID…"
+           [ngModel]="query()" (ngModelChange)="query.set($event)" />
+  </mat-form-field>
+</section>
+
+<p class="tz-note">Times are shown in firm-local time (America/New_York). Click a row to compare sources field by field.</p>
+
+@if (meetings.isLoading()) {
+  <mat-progress-bar mode="indeterminate" />
+}
+@if (meetings.error()) {
+  <mat-card class="load-error"><mat-icon>cloud_off</mat-icon> Could not load meetings. Is the API running?</mat-card>
+}
+
+<table mat-table [dataSource]="meetings.value() ?? []" class="mat-elevation-z1">
+  <ng-container matColumnDef="when">
+    <th mat-header-cell *matHeaderCellDef>When</th>
+    <td mat-cell *matCellDef="let m">
+      <div>{{ m.date | firmTime: 'date' }}</div>
+      <div class="muted">
+        @if (m.start) {
+          {{ m.start | firmTime: 'time' }}@if (m.end) {–{{ m.end | firmTime: 'time' }}}
+        } @else {
+          time unknown
+        }
+      </div>
+    </td>
+  </ng-container>
+
+  <ng-container matColumnDef="title">
+    <th mat-header-cell *matHeaderCellDef>Meeting</th>
+    <td mat-cell *matCellDef="let m">
+      <div class="title">{{ m.title }}</div>
+      <div class="muted">{{ clientLine(m) }}</div>
+    </td>
+  </ng-container>
+
+  <ng-container matColumnDef="owner">
+    <th mat-header-cell *matHeaderCellDef>Owner</th>
+    <td mat-cell *matCellDef="let m">{{ m.owner }}</td>
+  </ng-container>
+
+  <ng-container matColumnDef="location">
+    <th mat-header-cell *matHeaderCellDef>Location</th>
+    <td mat-cell *matCellDef="let m" class="location">{{ m.location ?? '—' }}</td>
+  </ng-container>
+
+  <ng-container matColumnDef="status">
+    <th mat-header-cell *matHeaderCellDef>Status</th>
+    <td mat-cell *matCellDef="let m"><span class="status {{ m.status }}">{{ m.status }}</span></td>
+  </ng-container>
+
+  <ng-container matColumnDef="sources">
+    <th mat-header-cell *matHeaderCellDef>Sources</th>
+    <td mat-cell *matCellDef="let m">
+      <app-source-badge [sources]="m.sources" [ids]="m.source_ids" />
+      @if (m.has_duplicates) {
+        <mat-icon class="dup" matTooltip="Includes a duplicate record from the same source">content_copy</mat-icon>
+      }
+    </td>
+  </ng-container>
+
+  <ng-container matColumnDef="conflicts">
+    <th mat-header-cell *matHeaderCellDef>Conflicts / issues</th>
+    <td mat-cell *matCellDef="let m">
+      @if (m.conflict_count) {
+        <span class="conflict-flag {{ m.max_conflict_severity }}" [matTooltip]="conflictTooltip(m)">
+          <mat-icon>{{ conflictIcon(m) }}</mat-icon>
+          {{ m.conflict_count }} conflict{{ m.conflict_count > 1 ? 's' : '' }}
+        </span>
+      }
+      @if (m.issue_count) {
+        <span class="muted" matTooltip="Data-quality issues found in the source records">
+          {{ m.issue_count }} issue{{ m.issue_count > 1 ? 's' : '' }}
+        </span>
+      }
+    </td>
+  </ng-container>
+
+  <tr mat-header-row *matHeaderRowDef="columns; sticky: true"></tr>
+  <tr mat-row *matRowDef="let row; columns: columns" (click)="open(row)" class="clickable"
+      [class.has-conflict]="row.conflict_count"></tr>
+  <tr class="mat-row" *matNoDataRow>
+    <td class="mat-cell empty" [attr.colspan]="columns.length">No meetings match these filters.</td>
+  </tr>
+</table>
