@@ -127,6 +127,7 @@ class EventSyncStack(Stack):
 
         user_data = ec2.UserData.custom(
             USER_DATA_TEMPLATE.read_text(encoding="utf-8")
+            .replace("\r\n", "\n")  # a Windows checkout/editor may add CRLF, which breaks bash
             .replace("{{region}}", self.region)
             .replace("{{source_url}}", backend_source.s3_object_url)
             .replace("{{data_bucket}}", data_bucket.bucket_name)
