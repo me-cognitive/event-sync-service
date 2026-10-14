@@ -19,6 +19,7 @@ The work ran as one conversation, in phases. Each phase ended with a report and 
 | Compute | Priced three options: ECS Fargate + ALB ≈ $37–40/mo, EC2 + Docker ≈ $10–12, ECS on EC2 ≈ $11–13 | **EC2 + Docker** | Cheapest; same container as local development |
 | UI library | Material or plain CSS | **Angular Material** | Consistent components with little effort |
 | Data location | Local files | **S3, provisioned by CDK**; local runs keep using files | Matches the target architecture without breaking the single-command local run |
+| Deploy credentials | Create an IAM user with AdministratorAccess by hand | **Create it with CDK only** | Infrastructure as code for the identity too. The assistant made it least-privilege (assume CDK bootstrap roles only) and bootstrapped from CloudShell, since CDK cannot create its own first credentials |
 | Existing AWS resources | Reuse my manually created instance and bucket, or let CDK own new ones | **Fully new via CDK** | Reproducible; `cdk destroy` cleans up everything |
 | Instance OS | Amazon Linux 2023 | **Ubuntu only** | My preference |
 | Capacity | — | I asked whether a t3.micro could run the containers | The assistant **measured** rather than guessed: ~65 MB for the backend, ~450–550 MB in total. It added a swap file and standard CPU credits as safeguards |

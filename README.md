@@ -251,9 +251,29 @@ Frontend tests were not written; per the brief, coverage is not evaluated, so th
 - **Only the API runs on EC2.** The UI is static files on S3 behind CloudFront: free HTTPS, the UI still loads while the instance is stopped, and one origin means no CORS. A CloudFront Function sends Angular routes to `index.html` without masking API 404s.
 - **Access via SSM Session Manager**, no SSH port open. The security group accepts HTTP only from CloudFront's managed prefix list. An Elastic IP keeps the origin address stable across stop/start.
 
+### One-time: deploy identity (also created with CDK)
+
+No access keys are created by hand. A small CDK app, [`infra/deployer_app.py`](infra/deployer_app.py), creates a **least-privilege** IAM user `cdk-deployer`. The user may only assume the roles created by `cdk bootstrap` (which do the actual deploying), plus read access to the AMI parameter, stack, logs and SSM shell sessions; it has no AdministratorAccess. Its access key is stored in Secrets Manager (`hexaware-poc/cdk-deployer`, about $0.40/month) instead of being printed.
+
+CDK needs credentials to run, so this first step runs in **AWS CloudShell**, which is already signed in through the console:
+
+1. Open the AWS console in **ap-southeast-2 (Sydney)** → CloudShell icon in the top bar.
+2. **Actions → Upload file** → `infra/deployer_app.py`.
+3. Run:
+   ```bash
+   pip install --user aws-cdk-lib constructs
+   npx -y aws-cdk@2 bootstrap                                 # once per account/region, also used by the app stack
+   npx -y aws-cdk@2 deploy --app "python3 deployer_app.py" --require-approval never
+   aws secretsmanager get-secret-value --secret-id hexaware-poc/cdk-deployer \
+     --query SecretString --output text                       # shows the access key id + secret
+   ```
+4. On your machine: `aws configure --profile hexaware-poc` with that key, region `ap-southeast-2`, output `json`. Check with `aws sts get-caller-identity --profile hexaware-poc`; it should show `user/cdk-deployer`.
+
+To revoke later: `npx aws-cdk@2 destroy --app "python3 deployer_app.py"` in CloudShell deletes the user, key and secret.
+
 ### Deploy
 
-Prerequisites: AWS CLI v2 with a profile for the target account, Node.js, Python 3.12+. Docker is **not** needed locally.
+Prerequisites: the `hexaware-poc` profile from the previous step, Node.js, Python 3.12+. Docker is **not** needed locally.
 
 ```bash
 # 1. Build the UI (CDK uploads frontend/dist)
@@ -265,10 +285,8 @@ python -m venv .venv
 # Windows: .venv\Scripts\activate     macOS/Linux: source .venv/bin/activate
 pip install -r requirements.txt
 
-# 3. One-time per account/region: CDK bootstrap
-npx aws-cdk@2 bootstrap --profile hexaware-poc
-
-# 4. Deploy (about 5–10 minutes; CloudFront is the slow part)
+# 3. Deploy (about 5–10 minutes; CloudFront is the slow part).
+#    Bootstrap was already done in CloudShell; cdk-deployer can't (and needn't) bootstrap.
 npx aws-cdk@2 deploy --profile hexaware-poc
 ```
 
