@@ -1,0 +1,8 @@
+# Store and check out text files with LF so shell scripts, Dockerfiles and
+# configs run unchanged on Linux (EC2, containers) even from a Windows checkout.
+* text=auto eol=lf
+
+*.png binary
+*.ico binary
+*.jpg binary
+*.pem binary
