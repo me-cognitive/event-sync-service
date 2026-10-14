@@ -286,7 +286,7 @@ Frontend tests were not written; per the brief, coverage is not evaluated, so th
 **2. Deploy the foundation and bootstrap CDK.** Sign in through the SSO portal with *AdministratorAccess*, switch to **ap-southeast-2 (Sydney)**, open **CloudShell**, upload `infra/foundation_app.py` (Actions → Upload file), then:
 
 ```bash
-pip install --user aws-cdk-lib constructs
+pip install aws-cdk-lib constructs     # CloudShell Python is a virtualenv: no --user
 npx -y aws-cdk@2 deploy --app "python3 foundation_app.py" -c githubRepo=<owner>/<repo> --require-approval never
 #   add  -c existingOidcProvider=true  if the account already trusts GitHub's OIDC provider
 ACCOUNT=$(aws sts get-caller-identity --query Account --output text)
