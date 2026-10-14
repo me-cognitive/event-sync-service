@@ -224,7 +224,7 @@ docker compose up --build
 | Component | Service |
 |---|---|
 | Source data | **S3** private bucket; files uploaded by CDK `BucketDeployment`; backend reads via `S3Loader` (`DATA_SOURCE=s3`) using the instance IAM role — no keys |
-| Backend | **EC2 t3.micro** (**Ubuntu Server 26.04 LTS**, x86_64, free-tier eligible; AMI resolved from Canonical's SSM parameter `/aws/service/canonical/ubuntu/server/26.04/stable/current/amd64/hvm/ebs-gp3/ami-id`) running only the backend container; image built locally for `linux/amd64`, pushed to **ECR** (CDK `DockerImageAsset`); user-data installs Docker + AWS CLI, adds 1 GB swap, logs in to ECR, runs the container with `--restart always`. CPU credits = `standard` (no surprise charges); 10 GB gp3 root volume |
+| Backend | **EC2 t3.micro** (**Ubuntu Server 26.04 LTS**, x86_64, free-tier eligible; AMI resolved from Canonical's SSM parameter `/aws/service/canonical/ubuntu/server/26.04/stable/current/amd64/hvm/ebs-gp3/ami-id`) running only the backend container. **Image built on the instance** (decision: Docker runs on the Ubuntu machine, not locally): CDK uploads the backend source as an S3 zip asset; user-data adds 1 GB swap, installs Docker + AWS CLI, downloads the source, `docker build`, runs the container with `--restart always` and host networking. No ECR. Code change → new asset URL → instance replaced. CPU credits = `standard`; 10 GB gp3 root volume |
 | Frontend | **S3 + CloudFront** (Origin Access Control); `/api/*` behaviour → EC2 public DNS custom origin (caching disabled) |
 | Networking | Default/simple VPC with public subnet only (no NAT); security group allows port 80 **only from the CloudFront managed prefix list**; SSM Session Manager instead of SSH |
 | Logs | Docker `awslogs` driver → CloudWatch |
@@ -272,7 +272,7 @@ event-sync-service/
   data/                     # provided JSON files
   backend/
   frontend/
-  infra/                    # AWS CDK (Python): data bucket, ECR asset, EC2, CloudFront, web bucket
+  infra/                    # AWS CDK (Python): data bucket, backend source asset, EC2 (builds image), CloudFront, web bucket
   docs/
     PLAN.md                 # this file
     AI_COLLABORATION.md     # prompts/brainstorming log, what AI did vs what I decided
@@ -291,7 +291,7 @@ event-sync-service/
 | **3. API** | Routes, filters, summary, sync, OpenAPI | Swagger working |
 | **4. Frontend** | List, detail (side-by-side provenance), issues, filters, summary bar | Usable UI |
 | **5. Docs** | README (run, approach, decisions, assumptions, limitations, future work, time spent), AI collaboration log | Submission-ready docs |
-| **6. AWS** | S3 loader, CDK stack (data bucket + ECR image + EC2/Docker + web bucket + CloudFront), deploy/destroy guide, cost notes | Deployed CloudFront URL |
+| **6. AWS** | S3 loader, CDK stack (data bucket + backend source asset + EC2/Docker build + web bucket + CloudFront), deploy/destroy guide, cost notes | Deployed CloudFront URL |
 
 ---
 

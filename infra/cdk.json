@@ -1,0 +1,11 @@
+{
+  "app": "python app.py",
+  "watch": {
+    "include": ["**"],
+    "exclude": ["README.md", "cdk*.json", "**/__pycache__", ".venv"]
+  },
+  "context": {
+    "ubuntuRelease": "26.04",
+    "instanceType": "t3.micro"
+  }
+}

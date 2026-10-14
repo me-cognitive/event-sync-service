@@ -237,21 +237,54 @@ Frontend tests were not written; per the brief, coverage is not evaluated, so th
 
 ## 10. AWS deployment
 
-> **Status: in progress.** The CDK stack is being implemented. This section will gain exact deploy steps and the live URL.
-
 ```
  Browser ──▶ CloudFront ──┬── /*      ──▶ S3 (Angular build, private, Origin Access Control)
-                          └── /api/*  ──▶ EC2 t3.micro · Ubuntu 26.04 · Docker (backend container)
+                          └── /api/*  ──▶ EC2 t3.micro · Ubuntu 26.04 · Docker (backend container, :80)
                                               │  IAM instance role (read-only)
                                               ▼
-                                         S3 data bucket (crm_events.json, calendar_events.json)
+                                         S3 data bucket (data/crm_events.json, data/calendar_events.json)
 ```
 
-- **Everything is created by AWS CDK (Python)** in `ap-southeast-2`, so `cdk deploy` builds it and `cdk destroy` removes it.
+- **Everything is created by AWS CDK (Python)** ([`infra/`](infra/)) in `ap-southeast-2`: `cdk deploy` builds it, `cdk destroy` removes it.
 - **Data lives in S3**, uploaded by CDK; the backend runs with `DATA_SOURCE=s3` and reads with the instance's IAM role (no stored keys).
-- **Only the API runs on EC2.** The UI is static files on S3 behind CloudFront: free HTTPS, the UI still loads while the instance is stopped, and one origin means no CORS.
-- **Access via SSM Session Manager**, no SSH port open. The instance only accepts HTTP from CloudFront.
-- Images are built locally and pushed to ECR; the 1 GB instance only pulls and runs them.
+- **The Docker image is built on the Ubuntu instance.** CDK uploads the backend source as a zip; on first boot [`infra/user_data.sh`](infra/user_data.sh) adds swap, installs Docker and the AWS CLI, downloads the source, runs `docker build` and starts the container. Deploying therefore needs **no local Docker and no container registry**. Changing backend code changes the upload, which replaces the instance with a freshly built one (a few minutes of API downtime, acceptable here).
+- **Only the API runs on EC2.** The UI is static files on S3 behind CloudFront: free HTTPS, the UI still loads while the instance is stopped, and one origin means no CORS. A CloudFront Function sends Angular routes to `index.html` without masking API 404s.
+- **Access via SSM Session Manager**, no SSH port open. The security group accepts HTTP only from CloudFront's managed prefix list. An Elastic IP keeps the origin address stable across stop/start.
+
+### Deploy
+
+Prerequisites: AWS CLI v2 with a profile for the target account, Node.js, Python 3.12+. Docker is **not** needed locally.
+
+```bash
+# 1. Build the UI (CDK uploads frontend/dist)
+cd frontend && npm ci && npx ng build && cd ..
+
+# 2. Install CDK dependencies
+cd infra
+python -m venv .venv
+# Windows: .venv\Scripts\activate     macOS/Linux: source .venv/bin/activate
+pip install -r requirements.txt
+
+# 3. One-time per account/region: CDK bootstrap
+npx aws-cdk@2 bootstrap --profile hexaware-poc
+
+# 4. Deploy (about 5–10 minutes; CloudFront is the slow part)
+npx aws-cdk@2 deploy --profile hexaware-poc
+```
+
+The stack prints `AppUrl` (the CloudFront URL) and `ApiHealthUrl`. The backend needs 2–4 minutes after the instance starts to install Docker and build the image; until then `/api/*` returns 502/504.
+
+**Troubleshooting:** open a shell with the printed `ShellCommand` (`aws ssm start-session …`, needs the Session Manager plugin), then `sudo tail -n 100 /var/log/event-sync-bootstrap.log` and `sudo docker logs backend`. Container logs also go to the CloudWatch log group in `BackendLogGroup`.
+
+**Ubuntu release:** the AMI comes from Canonical's public SSM parameter for Ubuntu 26.04. To check it exists in the region, or to fall back to 24.04:
+
+```bash
+aws ssm get-parameter --profile hexaware-poc --region ap-southeast-2 \
+  --name /aws/service/canonical/ubuntu/server/26.04/stable/current/amd64/hvm/ebs-gp3/ami-id
+npx aws-cdk@2 deploy --profile hexaware-poc -c ubuntuRelease=24.04
+```
+
+**Tear down:** `npx aws-cdk@2 destroy --profile hexaware-poc` removes everything, including both buckets.
 
 **Why a single EC2 instance?** Options compared (us-east-1 on-demand, approximate):
 
