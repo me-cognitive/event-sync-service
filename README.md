@@ -6,7 +6,7 @@ Pulls meeting records from a **CRM** export and a **Calendar** export, works out
 |---|---|
 | Backend | Python 3.12 · FastAPI · Pydantic · rapidfuzz |
 | Frontend | Angular 21 · Angular Material |
-| Cloud | AWS CDK (Python): S3 + CloudFront + EC2 (Ubuntu, Docker) |
+| Cloud | AWS CDK (Python): S3 + CloudFront + EC2 (Ubuntu, Docker) · GitHub Actions via OIDC (no stored AWS keys) |
 | Result on the provided data | 42 records → **24 meetings**: 17 matched, 3 CRM-only, 4 Calendar-only · 5 meetings with conflicts · 1 duplicate group · 11 data-quality issues, all repaired or flagged |
 
 ---
@@ -210,7 +210,11 @@ Meeting IDs are a hash of the sorted source record IDs, so they are stable acros
 │   │   └── shared/                          # source badge, firm-time & display pipes, status metadata
 │   ├── Dockerfile, nginx.conf               # production build served by nginx, /api proxied
 │   └── proxy.conf.json                      # dev-server proxy
-├── infra/                                   # AWS CDK app (see §10)
+├── infra/
+│   ├── app.py, stacks/event_sync_stack.py   # the application stack (see §10)
+│   ├── user_data.sh                         # EC2 first-boot: Docker, build, run
+│   └── foundation_app.py                    # one-time: OIDC deploy role, CDK execution policy, boundary
+├── .github/workflows/deploy.yml             # CI: tests + build on PRs; deploy on main via OIDC
 ├── data/                                    # the two provided JSON files
 ├── docs/
 │   ├── PLAN.md                              # planning document written before implementation
@@ -251,58 +255,79 @@ Frontend tests were not written; per the brief, coverage is not evaluated, so th
 - **Only the API runs on EC2.** The UI is static files on S3 behind CloudFront: free HTTPS, the UI still loads while the instance is stopped, and one origin means no CORS. A CloudFront Function sends Angular routes to `index.html` without masking API 404s.
 - **Access via SSM Session Manager**, no SSH port open. The security group accepts HTTP only from CloudFront's managed prefix list. An Elastic IP keeps the origin address stable across stop/start.
 
-### One-time: deploy identity (also created with CDK)
+### Access model: no long-lived AWS keys
 
-No access keys are created by hand. A small CDK app, [`infra/deployer_app.py`](infra/deployer_app.py), creates a **least-privilege** IAM user `cdk-deployer`. The user may only assume the roles created by `cdk bootstrap` (which do the actual deploying), plus read access to the AMI parameter, stack, logs and SSM shell sessions; it has no AdministratorAccess. Its access key is stored in Secrets Manager (`hexaware-poc/cdk-deployer`, about $0.40/month) instead of being printed.
+```
+ People ──SSO (MFA)──▶ IAM Identity Center ──temporary creds──▶ AWS account
+ git push main ──▶ GitHub Actions ──OIDC token──▶ EventSyncGitHubDeployRole ──assume──▶ CDK bootstrap roles ──▶ CloudFormation
+                                                  (no secrets in GitHub)                (execution policy: scoped, not Admin)
+```
 
-CDK needs credentials to run, so this first step runs in **AWS CloudShell**, which is already signed in through the console:
+| Who | How they authenticate | What they can do |
+|---|---|---|
+| People | **IAM Identity Center (SSO)** with MFA; `aws configure sso` caches temporary credentials | Permission sets: *AdministratorAccess* for the one-time setup only, *EventSyncOperator* day to day |
+| CI/CD | **GitHub Actions OIDC** → `EventSyncGitHubDeployRole`, trusted only for this repo's `production` environment | Assume the CDK bootstrap roles, nothing else |
+| CloudFormation | CDK bootstrap execution role with **`EventSyncCdkExecutionPolicy`** instead of the default AdministratorAccess | Only the services and resource-name prefixes the app uses; may create IAM roles **only** with the permissions boundary |
+| App roles (EC2, deployment Lambdas) | Created by the stack | Capped by **`EventSyncPermissionsBoundary`**, which can't be removed |
 
-1. Open the AWS console in **ap-southeast-2 (Sydney)** → CloudShell icon in the top bar.
-2. **Actions → Upload file** → `infra/deployer_app.py`.
-3. Run:
-   ```bash
-   pip install --user aws-cdk-lib constructs
-   npx -y aws-cdk@2 bootstrap                                 # once per account/region, also used by the app stack
-   npx -y aws-cdk@2 deploy --app "python3 deployer_app.py" --require-approval never
-   aws secretsmanager get-secret-value --secret-id hexaware-poc/cdk-deployer \
-     --query SecretString --output text                       # shows the access key id + secret
-   ```
-4. On your machine: `aws configure --profile hexaware-poc` with that key, region `ap-southeast-2`, output `json`. Check with `aws sts get-caller-identity --profile hexaware-poc`; it should show `user/cdk-deployer`.
+[`infra/foundation_app.py`](infra/foundation_app.py) creates the OIDC trust, deploy role, execution policy and boundary. It is the only thing an administrator deploys by hand, once. [`.github/workflows/deploy.yml`](.github/workflows/deploy.yml) runs the tests on every PR and push, and deploys on pushes to `main`.
 
-To revoke later: `npx aws-cdk@2 destroy --app "python3 deployer_app.py"` in CloudShell deletes the user, key and secret.
+### One-time setup (administrator)
+
+**1. Human access with IAM Identity Center**, so nobody uses the root user or IAM user keys:
+1. Console (as root, for the last time) → **IAM Identity Center → Enable**. It offers to create an AWS Organization with this account as the management account; accept (free).
+2. **Users → Add user** for yourself, with MFA.
+3. **Permission sets**:
+   - `AdministratorAccess` (predefined): used only for this one-time setup.
+   - `EventSyncOperator` (custom): AWS managed `ReadOnlyAccess` plus an inline policy allowing `sts:AssumeRole` on `arn:aws:iam::<account>:role/cdk-hnb659fds-*` and `ssm:StartSession`. This is enough for `cdk diff/deploy/destroy` and shell sessions on the instance.
+4. **AWS accounts** → select the account → assign your user both permission sets.
+5. Locally: `aws configure sso --profile hexaware-poc` (SSO start URL from the Identity Center dashboard, region `ap-southeast-2`, choose `EventSyncOperator`). Later sign-ins: `aws sso login --profile hexaware-poc`.
+
+**2. Deploy the foundation and bootstrap CDK.** Sign in through the SSO portal with *AdministratorAccess*, switch to **ap-southeast-2 (Sydney)**, open **CloudShell**, upload `infra/foundation_app.py` (Actions → Upload file), then:
+
+```bash
+pip install --user aws-cdk-lib constructs
+npx -y aws-cdk@2 deploy --app "python3 foundation_app.py" -c githubRepo=<owner>/<repo> --require-approval never
+#   add  -c existingOidcProvider=true  if the account already trusts GitHub's OIDC provider
+ACCOUNT=$(aws sts get-caller-identity --query Account --output text)
+npx -y aws-cdk@2 bootstrap aws://$ACCOUNT/ap-southeast-2 \
+  --cloudformation-execution-policies arn:aws:iam::$ACCOUNT:policy/EventSyncCdkExecutionPolicy
+```
+
+Note the `DeployRoleArn` output.
+
+**3. Configure GitHub** (repository → Settings):
+- **Environments → New environment `production`**: restrict deployment branches to `main`, and optionally add required reviewers as an approval gate.
+- **Secrets and variables → Actions → Variables → New repository variable** `AWS_DEPLOY_ROLE_ARN` = the `DeployRoleArn` output. It is a role ARN, not a secret.
 
 ### Deploy
 
-Prerequisites: the `hexaware-poc` profile from the previous step, Node.js, Python 3.12+. Docker is **not** needed locally.
+Push to `main` (or run the workflow manually: Actions → *CI / Deploy* → Run workflow). The job tests, builds the UI, assumes the deploy role through OIDC and runs `cdk deploy`; the job summary shows the app URL. A deploy takes about 5–10 minutes (CloudFront is the slow part). After the instance starts, the backend needs 2–4 more minutes to install Docker and build the image; until then `/api/*` returns 502/504.
+
+**From a laptop** (e.g. to try a change before merging), with the SSO profile:
 
 ```bash
-# 1. Build the UI (CDK uploads frontend/dist)
+aws sso login --profile hexaware-poc
 cd frontend && npm ci && npx ng build && cd ..
-
-# 2. Install CDK dependencies
-cd infra
-python -m venv .venv
+cd infra && python -m venv .venv
 # Windows: .venv\Scripts\activate     macOS/Linux: source .venv/bin/activate
 pip install -r requirements.txt
-
-# 3. Deploy (about 5–10 minutes; CloudFront is the slow part).
-#    Bootstrap was already done in CloudShell; cdk-deployer can't (and needn't) bootstrap.
-npx aws-cdk@2 deploy --profile hexaware-poc
+npx aws-cdk@2 deploy EventSyncStack --profile hexaware-poc
 ```
 
-The stack prints `AppUrl` (the CloudFront URL) and `ApiHealthUrl`. The backend needs 2–4 minutes after the instance starts to install Docker and build the image; until then `/api/*` returns 502/504.
-
-**Troubleshooting:** open a shell with the printed `ShellCommand` (`aws ssm start-session …`, needs the Session Manager plugin), then `sudo tail -n 100 /var/log/event-sync-bootstrap.log` and `sudo docker logs backend`. Container logs also go to the CloudWatch log group in `BackendLogGroup`.
+**Troubleshooting:** open a shell with the printed `ShellCommand` (`aws ssm start-session … --profile hexaware-poc`, needs the [Session Manager plugin](https://docs.aws.amazon.com/systems-manager/latest/userguide/session-manager-working-with-install-plugin.html)), then `sudo tail -n 100 /var/log/event-sync-bootstrap.log` and `sudo docker logs backend`. Container logs also go to the CloudWatch log group in `BackendLogGroup`. If CloudFormation reports `AccessDenied` for an action, that action is missing from the scoped `EventSyncCdkExecutionPolicy` in [`foundation_app.py`](infra/foundation_app.py): add it and redeploy the foundation.
 
 **Ubuntu release:** the AMI comes from Canonical's public SSM parameter for Ubuntu 26.04. To check it exists in the region, or to fall back to 24.04:
 
 ```bash
 aws ssm get-parameter --profile hexaware-poc --region ap-southeast-2 \
   --name /aws/service/canonical/ubuntu/server/26.04/stable/current/amd64/hvm/ebs-gp3/ami-id
-npx aws-cdk@2 deploy --profile hexaware-poc -c ubuntuRelease=24.04
+npx aws-cdk@2 deploy EventSyncStack --profile hexaware-poc -c ubuntuRelease=24.04
 ```
 
-**Tear down:** `npx aws-cdk@2 destroy --profile hexaware-poc` removes everything, including both buckets.
+To make it permanent for CI, change `ubuntuRelease` in [`infra/cdk.json`](infra/cdk.json).
+
+**Tear down:** `npx aws-cdk@2 destroy EventSyncStack --profile hexaware-poc` removes the app, including both buckets. The foundation stays for future deploys; remove it from CloudShell as an administrator with `npx aws-cdk@2 destroy --app "python3 foundation_app.py" -c githubRepo=<owner>/<repo>`.
 
 **Why a single EC2 instance?** Options compared (us-east-1 on-demand, approximate):
 

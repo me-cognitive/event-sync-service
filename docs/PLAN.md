@@ -291,7 +291,7 @@ event-sync-service/
 | **3. API** | Routes, filters, summary, sync, OpenAPI | Swagger working |
 | **4. Frontend** | List, detail (side-by-side provenance), issues, filters, summary bar | Usable UI |
 | **5. Docs** | README (run, approach, decisions, assumptions, limitations, future work, time spent), AI collaboration log | Submission-ready docs |
-| **6. AWS** | S3 loader, CDK stack (data bucket + backend source asset + EC2/Docker build + web bucket + CloudFront), deploy/destroy guide, cost notes | Deployed CloudFront URL |
+| **6. AWS** | S3 loader, CDK stack (data bucket + backend source asset + EC2/Docker build + web bucket + CloudFront), keyless access (Identity Center, GitHub OIDC deploy role, scoped CDK execution policy, permissions boundary), CI/CD workflow, deploy/destroy guide | Deployed CloudFront URL |
 
 ---
 
