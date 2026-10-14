@@ -241,7 +241,7 @@ docker compose up --build
 | C. ECS on EC2, no ALB | ≈ $11–13 | More CDK complexity for little gain |
 
 **Decision record — AWS account & existing resources**
-- Account `535635599643`, region **`ap-southeast-2` (Sydney)**; CDK uses a dedicated CLI profile (`hexaware-poc`).
+- Account `<AWS account ID>`, region **`ap-southeast-2` (Sydney)**; CDK uses a dedicated CLI profile (`hexaware-poc`).
 - A manually created EC2 (`m7i-flex.large`, ~$87/mo) and S3 bucket already exist. **Decision: CDK creates everything new** (its own t3.micro, data bucket, web bucket, CloudFront, IAM, SG) and leaves the manual resources untouched, so the whole stack is reproducible and removable with `cdk destroy`.
 - Access to the instance is via **SSM Session Manager**; no SSH ingress. Key files in `AWS_details/` are git-ignored and not used by the stack.
 
