@@ -241,6 +241,10 @@ Frontend tests were not written; per the brief, coverage is not evaluated, so th
 
 ## 10. AWS deployment
 
+**Live:** https://d18s1shaz59kg2.cloudfront.net (API health: [`/api/health`](https://d18s1shaz59kg2.cloudfront.net/api/health), Swagger: [`/docs`](https://d18s1shaz59kg2.cloudfront.net/docs)). Region `ap-southeast-2`; data read from S3.
+
+**How the live instance was deployed.** The PoC account belongs to an AWS Organization whose SCP blocks the GitHub OIDC provider, so the deployment ran from **AWS CloudShell** on a temporary federated session (still no stored keys), following [Governed accounts](#governed-accounts-organization-scps). For speed, CDK was bootstrapped with its **default** execution policy rather than the scoped `EventSyncCdkExecutionPolicy`; the permissions boundary is still applied to every app role. Re-bootstrapping with `--cloudformation-execution-policies` switches to the scoped policy. First deploy: about 7 minutes; the backend then built and started on the instance in about 3 minutes.
+
 ```
  Browser ──▶ CloudFront ──┬── /*      ──▶ S3 (Angular build, private, Origin Access Control)
                           └── /api/*  ──▶ EC2 t3.micro · Ubuntu 26.04 · Docker (backend container, :80)
