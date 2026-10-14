@@ -34,7 +34,7 @@ GITHUB_OIDC_URL = "token.actions.githubusercontent.com"
 
 
 class FoundationStack(Stack):
-    def __init__(self, scope: Construct, construct_id: str, *, github_repo: str, github_environment: str,
+    def __init__(self, scope: Construct, construct_id: str, *, github_repo: str | None, github_environment: str,
                  existing_oidc_provider: bool, **kwargs) -> None:
         super().__init__(scope, construct_id, **kwargs)
         account, region = self.account, self.region
@@ -111,7 +111,15 @@ class FoundationStack(Stack):
             ],
         )
 
-        # --- GitHub Actions OIDC federation.
+        CfnOutput(self, "BootstrapCommand", value=(
+            f"npx aws-cdk@2 bootstrap aws://{account}/{region} "
+            f"--cloudformation-execution-policies arn:aws:iam::{account}:policy/{EXECUTION_POLICY}"
+        ))
+
+        # --- GitHub Actions OIDC federation (skipped with -c githubOidc=false, e.g. when an
+        # organization SCP forbids creating identity providers; deploy from CloudShell instead).
+        if github_repo is None:
+            return
         provider_arn = f"arn:aws:iam::{account}:oidc-provider/{GITHUB_OIDC_URL}"
         if not existing_oidc_provider:  # only one provider per URL per account
             provider = iam.CfnOIDCProvider(
@@ -141,20 +149,17 @@ class FoundationStack(Stack):
 
         CfnOutput(self, "DeployRoleArn", value=deploy_role.role_arn,
                   description="Set as GitHub repository variable AWS_DEPLOY_ROLE_ARN")
-        CfnOutput(self, "BootstrapCommand", value=(
-            f"npx aws-cdk@2 bootstrap aws://{account}/{region} "
-            f"--cloudformation-execution-policies arn:aws:iam::{account}:policy/{EXECUTION_POLICY}"
-        ))
 
 
 app = cdk.App()
+github_oidc = str(app.node.try_get_context("githubOidc")).lower() != "false"
 repo = app.node.try_get_context("githubRepo")
-if not repo or "/" not in repo:
-    raise ValueError('Pass the GitHub repository: -c githubRepo=<owner>/<repo>')
+if github_oidc and (not repo or "/" not in repo):
+    raise ValueError("Pass the GitHub repository (-c githubRepo=<owner>/<repo>) or disable it (-c githubOidc=false)")
 
 FoundationStack(
     app, "EventSyncFoundation",
-    github_repo=repo,
+    github_repo=repo if github_oidc else None,
     github_environment=app.node.try_get_context("githubEnvironment") or "production",
     existing_oidc_provider=str(app.node.try_get_context("existingOidcProvider")).lower() == "true",
     env=cdk.Environment(region="ap-southeast-2"),

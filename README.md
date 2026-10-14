@@ -300,6 +300,27 @@ Note the `DeployRoleArn` output.
 - **Environments → New environment `production`**: restrict deployment branches to `main`, and optionally add required reviewers as an approval gate.
 - **Secrets and variables → Actions → Variables → New repository variable** `AWS_DEPLOY_ROLE_ARN` = the `DeployRoleArn` output. It is a role ARN, not a secret.
 
+### Governed accounts (organization SCPs)
+
+In a company-managed AWS Organization, service control policies can forbid parts of this setup. The PoC account used here, for example, denies `iam:CreateOpenIDConnectProvider` (and offers no IAM Identity Center or IAM console users); people sign in through the platform's federated `AccountFullAccessRole`. SCPs override any permission inside the account, so the setup adapts instead:
+
+1. Check whether the platform already provides GitHub's OIDC provider: `aws iam list-open-id-connect-providers`. If `token.actions.githubusercontent.com` is listed, deploy the foundation with `-c existingOidcProvider=true` and keep the GitHub Actions flow.
+2. Otherwise deploy the foundation **without** the GitHub part (it still creates the scoped execution policy and the permissions boundary), bootstrap, and **deploy from CloudShell**, which runs on the user's temporary federated session, so there are still no stored keys:
+
+   ```bash
+   npx -y aws-cdk@2 deploy --app "python3 foundation_app.py" -c githubOidc=false --require-approval never
+   ACCOUNT=$(aws sts get-caller-identity --query Account --output text)
+   npx -y aws-cdk@2 bootstrap aws://$ACCOUNT/ap-southeast-2 \
+     --cloudformation-execution-policies arn:aws:iam::$ACCOUNT:policy/EventSyncCdkExecutionPolicy
+
+   cd /tmp && git clone https://github.com/me-cognitive/event-sync-service && cd event-sync-service
+   (cd frontend && npm ci && npx ng build)
+   cd infra && pip install -r requirements.txt
+   npx -y aws-cdk@2 deploy EventSyncStack --require-approval never
+   ```
+
+   GitHub Actions keeps running tests and the build on every push; its deploy job stays skipped until `AWS_DEPLOY_ROLE_ARN` is set. To move deployments to GitHub later, ask the platform team to create the GitHub OIDC provider (or grant an SCP exception), then redeploy the foundation with `-c githubRepo=<owner>/<repo>` (plus `-c existingOidcProvider=true` if they created it).
+
 ### Deploy
 
 Push to `main` (or run the workflow manually: Actions → *CI / Deploy* → Run workflow). The job tests, builds the UI, assumes the deploy role through OIDC and runs `cdk deploy`; the job summary shows the app URL. A deploy takes about 5–10 minutes (CloudFront is the slow part). After the instance starts, the backend needs 2–4 more minutes to install Docker and build the image; until then `/api/*` returns 502/504.
