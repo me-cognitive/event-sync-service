@@ -391,6 +391,8 @@ To make it permanent for CI, change `ubuntuRelease` in [`infra/cdk.json`](infra/
 
 ## 12. AI collaboration
 
+A full reference to every rule, term, endpoint and component is in [`docs/APPLICATION_GUIDE.md`](docs/APPLICATION_GUIDE.md).
+
 Built with an AI coding assistant (Claude Code). The planning document written before any code is in [`docs/PLAN.md`](docs/PLAN.md). [`docs/AI_COLLABORATION.md`](docs/AI_COLLABORATION.md) records how the work was split, the decisions I made, and the mistakes the AI made and how they were caught.
 
 ## 13. Time spent
